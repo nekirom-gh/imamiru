@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>いまミル！</title>
+<style>
+/* Layout: wireframe look in cinema red (案A). White app bar (title + gear + info), gray search panel, gray-banded cinema cards, fixed bottom tab bar. System fonts only. */
+:root {
+  --bg: #f7f3f2; --surface: #ffffff; --band: #efe4e2; --ink: #1a1a1a; --muted: #6b6464; --line: #e2d5d3; --frame: #c4b0ad;
+  --strong: #8e1b24; --on-strong: #ffffff; --track: #eadcda;
+  --title: #8e1b24; --band-ink: var(--ink); --active: #8e1b24;
+  --font: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #140d0e; --surface: #201618; --band: #3a1a1e; --ink: #f3ecea; --muted: #b3a3a1; --line: #3a2a2c; --frame: #5e3a3e; --strong: #d1454f; --on-strong: #ffffff; --track: #3a2a2c; --title: #e9636c; --active: #e9636c; --band-ink: #f3ecea; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #140d0e; --surface: #201618; --band: #3a1a1e; --ink: #f3ecea; --muted: #b3a3a1; --line: #3a2a2c; --frame: #5e3a3e; --strong: #d1454f; --on-strong: #ffffff; --track: #3a2a2c; --title: #e9636c; --active: #e9636c; --band-ink: #f3ecea; color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.5; margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+svg { width: 22px; height: 22px; flex: none; }
+
+.appbar { background: var(--surface); border-bottom: 1px solid var(--line); }
+.appbar .in { max-width: 520px; margin: 0 auto; padding-inline: 16px; padding-block: 10px; display: flex; align-items: center; gap: 4px; }
+.appbar h1 { flex: 1; color: var(--title); font-size: 1.6rem; font-weight: 800; margin: 0; letter-spacing: .02em; }
+.iconbtn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--ink); }
+.iconbtn svg { width: 26px; height: 26px; }
+.iconbtn[aria-expanded="true"] { background: var(--band); }
+
+main { max-width: 520px; margin: 0 auto; padding-inline: 16px; padding-block: 14px calc(96px + env(safe-area-inset-bottom, 0px)); }
+.info { margin-bottom: 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: .82rem; color: var(--muted); display: grid; gap: 8px; }
+.info h2 { font-size: .85rem; margin: 0; color: var(--ink); }
+.info ul { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
+.info a { color: inherit; }
+
+.panel { display: grid; gap: 14px; }
+.seg { justify-self: center; width: min(100%, 300px); display: grid; grid-template-columns: 1fr 1fr; border: 1.5px solid var(--strong); border-radius: 99px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; padding: 8px 4px; background: transparent; font-weight: 700; font-size: .95rem; }
+.seg button[aria-pressed="true"] { background: var(--strong); color: var(--on-strong); }
+.st { display: flex; gap: 8px; }
+.st input { flex: 1; min-width: 0; font-size: 1rem; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 99px; background: var(--surface); text-align: center; }
+.pick { display: flex; flex-wrap: wrap; gap: 6px; font-size: .85rem; color: var(--muted); align-items: center; justify-content: center; }
+.pick button { padding: 4px 12px; border-radius: 99px; border: 1px solid var(--strong); background: var(--surface); }
+.dist { display: grid; gap: 0; }
+.dist input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; margin: 0; background: transparent; }
+.dist input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(var(--strong), var(--strong)) 0 / var(--fill, 50%) 100% no-repeat, var(--track); border: 1px solid var(--frame); }
+.dist input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--track); border: 1px solid var(--frame); }
+.dist input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--strong); }
+.dist input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: var(--strong); border: 0; margin-top: -10px; }
+.dist input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--strong); border: 0; }
+.ticks { position: relative; height: 1.3em; margin-inline: 12px; font-size: .85rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.dist output { text-align: center; font-size: 1.15rem; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.go { width: 100%; padding: 14px; border: 0; border-radius: 99px; background: var(--strong); color: var(--on-strong); font-size: 1.3rem; font-weight: 800; letter-spacing: .04em; }
+.go[aria-busy="true"] { opacity: .6; }
+
+.resbar { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.sum { font-size: .8rem; color: var(--muted); text-align: center; }
+.sum b { color: var(--ink); }
+
+.cards { margin-top: 12px; display: grid; gap: 16px; }
+.card { background: var(--surface); border: 1.5px solid var(--frame); border-radius: 10px; overflow: hidden; }
+.card header { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 14px; background: var(--band); color: var(--band-ink); }
+.card header h3 { flex: 1; min-width: 0; margin: 0; font-size: 1.2rem; font-weight: 800; line-height: 1.3; }
+.card header h3 small { font-weight: 400; color: inherit; opacity: .85; font-size: .85rem; margin-left: 8px; white-space: nowrap; }
+.card header a, .card header button { min-width: 40px; height: 42px; padding-inline: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 8px; background: transparent; color: inherit; text-decoration: none; font-size: .95rem; }
+.card header .fav[aria-pressed="true"] { color: var(--tight); }
+.body { padding: 10px 10px 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.eta { font-size: .95rem; font-variant-numeric: tabular-nums; }
+.eta b { font-size: 1.5rem; font-weight: 600; margin-inline: 4px; }
+.sched { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 99px; background: var(--strong); color: var(--on-strong); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.sched svg { width: 16px; height: 16px; }
+.msg { padding: 28px 8px; text-align: center; color: var(--muted); }
+.note { margin-top: 20px; font-size: .72rem; color: var(--muted); text-align: center; }
+
+h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
+.favlist, .settings { display: grid; gap: 12px; }
+.favlist .card header { padding-block: 8px; }
+.row { background: var(--surface); border: 1.5px solid var(--frame); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.row label, .row .lbl { font-weight: 700; }
+.row .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.row .opts button { padding: 6px 14px; border-radius: 99px; border: 1.5px solid var(--strong); background: var(--surface); }
+.row .opts button[aria-pressed="true"] { background: var(--strong); color: var(--on-strong); }
+.row small { color: var(--muted); }
+
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 5; }
+.tabs .in { max-width: 520px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
+.tabs button { border: 0; background: none; padding: 8px 0 10px; display: grid; justify-items: center; gap: 2px; font-size: .75rem; color: var(--muted); }
+.tabs button svg { width: 26px; height: 26px; }
+.tabs button[aria-current="page"] { color: var(--active); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="appbar"><div class="in">
+  <h1>いまミル！</h1>
+  <button type="button" class="iconbtn" id="gearBtn" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 2.5h3.4l.5 2.6 1.6.9 2.5-.9 1.7 2.9-2 1.8v1.9l2 1.8-1.7 2.9-2.5-.9-1.6.9-.5 2.6h-3.4l-.5-2.6-1.6-.9-2.5.9-1.7-2.9 2-1.8v-1.9l-2-1.8 1.7-2.9 2.5.9 1.6-.9z"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+  <button type="button" class="iconbtn" id="infoBtn" aria-expanded="false" aria-controls="info" aria-label="使い方と表示ルール"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 10.5v6.5"/><circle cx="12" cy="7.3" r=".7" fill="currentColor"/></svg></button>
+</div></div>
+
+<main>
+  <section class="info" id="info" hidden>
+    <h2>使い方</h2>
+    <ul>
+      <li>「現在地から」か「駅から入力」を選び、歩ける時間をスライダーで決めて <b>いまミル！検索</b>。</li>
+      <li>歩いて行ける映画館を近い順に出します。<b>上映スケジュール</b> で劇場の公式サイトを開き、いまからの上映を確かめてください。ピンは地図、♡ はお気に入りです。</li>
+    </ul>
+    <h2>表示ルール</h2>
+    <ul>
+      <li>徒歩は直線距離×1.3を分速80mで計算。「いま出ると◯:◯◯着」はその到着の目安です。</li>
+      <li>「0（現在地）」はもう映画館にいる前提で、半径200m以内の劇場を出します。</li>
+    </ul>
+    <h2>データの出典</h2>
+    <ul>
+      <li>駅の位置: <a href="https://ekidata.jp/" target="_blank" rel="noopener">駅データ.jp</a>（「駅から入力」で検索したときだけ読み込み）</li>
+      <li>映画館の位置: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>（Overpass API）</li>
+      <li>上映スケジュールボタンの行き先: 各劇場の公式サイト（OpenStreetMap の登録情報、またはサンプル劇場は2026年10月に確認したURL。どちらも無い劇場は検索結果）</li>
+      <li>上映スケジュール: このアプリには載せていません。各劇場の公式サイトで確認してください。</li>
+      <li id="sampleNote" hidden></li>
+    </ul>
+  </section>
+
+  <div id="viewSearch">
+  <div class="panel">
+    <div class="seg" role="group" aria-label="探す場所">
+      <button type="button" id="modeHere" aria-pressed="true">現在地から</button>
+      <button type="button" id="modeStation" aria-pressed="false">駅から入力</button>
+    </div>
+    <form class="st" id="stForm" autocomplete="off" hidden>
+      <input id="station" placeholder="駅名を入力（例: 新宿）" aria-label="駅名" enterkeyhint="search">
+    </form>
+    <div class="pick" id="pick" hidden></div>
+    <div class="dist">
+      <input type="range" id="walk" min="0" max="30" step="5" value="15" aria-label="歩ける時間（分）">
+      <div class="ticks" aria-hidden="true"><span style="left:0%">0</span><span style="left:50%">15</span><span style="left:66.667%">20</span><span style="left:100%">30</span></div>
+      <output id="walkOut" for="walk">徒歩 15 分</output>
+    </div>
+    <button type="button" class="go" id="go">いまミル！検索</button>
+  </div>
+
+  <section class="resbar" id="resbar" aria-live="polite">
+    <div class="sum" id="sum">ボタンを押すと、歩いて行ける映画館を近い順に出します。</div>
+  </section>
+  <div class="cards" id="out"></div>
+  <p class="note">使い方とデータの出典は右上の ⓘ</p>
+  </div>
+
+  <div id="viewFav" hidden>
+    <h2 class="view">お気に入りの劇場</h2>
+    <div class="favlist" id="favList"></div>
+  </div>
+
+  <div id="viewSettings" hidden>
+    <h2 class="view">設定</h2>
+    <div class="settings">
+      <div class="row"><span class="lbl">開いたときの探し方</span><div class="opts" id="setMode"><button type="button" data-v="here">現在地から</button><button type="button" data-v="station">駅から入力</button></div></div>
+      <div class="row"><span class="lbl">表示</span><div class="opts" id="setTheme"><button type="button" data-v="">端末に合わせる</button><button type="button" data-v="light">ライト</button><button type="button" data-v="dark">ダーク</button></div></div>
+      <div class="row"><span class="lbl">お気に入り</span><div class="opts"><button type="button" id="clearFav">すべて消す</button></div><small>お気に入りと設定はこの端末のブラウザにだけ保存されます。</small></div>
+    </div>
+  </div>
+</main>
+
+<nav class="tabs" aria-label="画面"><div class="in">
+  <button type="button" id="tabSearch" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l5 5"/></svg>検索</button>
+  <button type="button" id="tabFav"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.2 5.3 3 1.7-1.8 3.1-3 5.3-3 3.7 0 5.8 3.9 4.3 7.2C19.5 16.4 12 21 12 21z"/></svg>お気に入り</button>
+  <button type="button" id="tabSettings"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.3 2.5h3.4l.5 2.6 1.6.9 2.5-.9 1.7 2.9-2 1.8v1.9l2 1.8-1.7 2.9-2.5-.9-1.6.9-.5 2.6h-3.4l-.5-2.6-1.6-.9-2.5.9-1.7-2.9 2-1.8v-1.9l-2-1.8 1.7-2.9 2.5.9 1.6-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"/></svg>設定</button>
+</div></nav>
+
+<script>
+"use strict";
+const WALK = 80, DETOUR = 1.3, AT_HERE_M = 200;
+const PREFS = ["", "北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県", "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県", "新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県", "静岡県", "愛知県", "三重県", "滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県", "鳥取県", "島根県", "岡山県", "広島県", "山口県", "徳島県", "香川県", "愛媛県", "高知県", "福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"];
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const norm = s => s.trim().replace(/[（(].*$/, "").replace(/駅$/, "").trim();
+function dist(a, b) {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(x));
+}
+const walkMin = () => +$("walk").value;
+const radiusM = () => walkMin() ? Math.round(walkMin() * WALK / DETOUR) : AT_HERE_M;   // 徒歩N分で届く直線距離
+const walkLabel = () => walkMin() ? `徒歩 ${walkMin()} 分` : "現在地（0分）";
+// 劇場HP。OSM の website → 既知の公式サイト → どちらも無ければ検索結果
+const SITES = {
+  "TOHOシネマズ 新宿": "https://www.tohotheater.jp/net/schedule/076/TNPI2000J01.do",
+  "TOHOシネマズ 渋谷": "https://www.tohotheater.jp/net/schedule/043/TNPI2000J01.do",
+  "TOHOシネマズ 池袋": "https://www.tohotheater.jp/net/schedule/084/TNPI2000J01.do",
+  "TOHOシネマズ 日比谷": "https://www.tohotheater.jp/net/schedule/081/TNPI2000J01.do",
+  "TOHOシネマズ シャンテ": "https://www.tohotheater.jp/net/schedule/041/TNPI2000J01.do",
+  "TOHOシネマズ 梅田": "https://www.tohotheater.jp/net/schedule/037/TNPI2000J01.do",
+  "新宿バルト9": "https://tjoy.jp/shinjuku_wald9",
+  "T・ジョイ梅田": "https://tjoy.jp/t-joy_umeda",
+  "新宿ピカデリー": "https://www.smt-cinema.com/site/shinjuku/",
+  "丸の内ピカデリー": "https://www.smt-cinema.com/site/marunouchi/",
+  "大阪ステーションシティシネマ": "https://www.smt-cinema.com/site/osaka/",
+  "109シネマズプレミアム新宿": "https://109cinemas.net/premiumshinjuku/",
+  "新宿武蔵野館": "https://shinjuku.musashino-k.jp/",
+  "テアトル新宿": "https://ttcg.jp/theatre_shinjuku/",
+  "ヒューマントラストシネマ渋谷": "https://ttcg.jp/human_shibuya/",
+  "ヒューマントラストシネマ有楽町": "https://ttcg.jp/human_yurakucho/",
+  "テアトル梅田": "https://ttcg.jp/ttcg_umeda/",
+  "シネ・リーブル梅田": "https://ttcg.jp/cinelibre_umeda/",
+  "ホワイト シネクイント": "https://www.cinequinto.com/white/",
+  "Bunkamura ル・シネマ 渋谷宮下": "https://www.bunkamura.co.jp/cinema_miyashita/",
+  "グランドシネマサンシャイン 池袋": "https://www.cinemasunshine.co.jp/theater/gdcs/",
+  "池袋HUMAXシネマズ": "https://humax-cinema.co.jp/ikebukuro",
+  "新文芸坐": "https://www.shin-bungeiza.com/",
+  "シネマ・ロサ": "https://www.cinemarosa.net/",
+  "角川シネマ有楽町": "https://www.kadokawa-cinema.jp/yurakucho/",
+};
+const siteOf = c => c.url || SITES[c.name] || "https://www.google.com/search?q=" + encodeURIComponent(c.name + " 上映スケジュール");
+
+/* ---- サンプルデータ（movie-finder と同じ。劇場座標はおおよそ、作品と時刻は架空） ---- */
+const SAMPLE_CINEMAS = [
+  ["TOHOシネマズ 新宿", 35.6951, 139.7020], ["新宿バルト9", 35.6906, 139.7065], ["新宿ピカデリー", 35.6922, 139.7041], ["109シネマズプレミアム新宿", 35.6950, 139.7016], ["新宿武蔵野館", 35.6915, 139.7015], ["テアトル新宿", 35.6915, 139.7069],
+  ["TOHOシネマズ 渋谷", 35.6600, 139.6988], ["ヒューマントラストシネマ渋谷", 35.6618, 139.7045], ["ホワイト シネクイント", 35.6612, 139.6985], ["Bunkamura ル・シネマ 渋谷宮下", 35.6620, 139.7015],
+  ["グランドシネマサンシャイン 池袋", 35.7302, 139.7160], ["TOHOシネマズ 池袋", 35.7316, 139.7178], ["池袋HUMAXシネマズ", 35.7310, 139.7140], ["新文芸坐", 35.7320, 139.7129], ["シネマ・ロサ", 35.7317, 139.7087],
+  ["TOHOシネマズ 日比谷", 35.6741, 139.7598], ["TOHOシネマズ シャンテ", 35.6735, 139.7595], ["丸の内ピカデリー", 35.6743, 139.7633], ["角川シネマ有楽町", 35.6748, 139.7625], ["ヒューマントラストシネマ有楽町", 35.6750, 139.7633],
+  ["TOHOシネマズ 梅田", 34.7043, 135.5005], ["大阪ステーションシティシネマ", 34.7029, 135.4950], ["T・ジョイ梅田", 34.7043, 135.4993], ["テアトル梅田", 34.7072, 135.4950], ["シネ・リーブル梅田", 34.7051, 135.4900],
+].map(([name, lat, lng]) => ({ name, lat, lng }));
+const SAMPLE_AREAS = "新宿・渋谷・池袋・有楽町・梅田";
+
+/* ---- プロバイダ（movie-finder と同じ形。実データが手に入ったらここだけ差し替える） ---- */
+const BundledStationProvider = {
+  list: null,
+  async load() { return this.list ||= (await (await fetch("stations.json")).json()).map(([name, p, lat, lng]) => ({ name, pref: PREFS[p], lat, lng })); },
+  async find(q) {
+    const list = await this.load(), n = norm(q), pref = (q.match(/[（(](.+?)[）)]/) || [])[1];
+    let hits = list.filter(s => s.name === n);
+    if (pref) hits = hits.filter(s => s.pref.startsWith(pref));
+    return hits.length ? hits : list.filter(s => s.name.startsWith(n)).slice(0, 8);
+  },
+};
+const OverpassCinemaProvider = {
+  async near(p, r) {
+    const ctl = new AbortController(); setTimeout(() => ctl.abort(), 12000);
+    const q = `[out:json][timeout:10];nwr(around:${r},${p.lat},${p.lng})[amenity=cinema];out center tags;`;
+    const data = await (await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: ctl.signal })).json();
+    return data.elements.filter(e => e.tags && e.tags.name).map(e => ({ name: e.tags.name, url: e.tags.website || e.tags["contact:website"] || "", lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon }));
+  },
+};
+const SampleCinemaProvider = { async near(p, r) { return SAMPLE_CINEMAS.filter(c => dist(p, c) <= r); } };
+// 上映スケジュールは載せない（合法に使える公開データが無いため）。データ契約ができたら showtimes: { forCinema(cinema, date) → [{title, start, runtime}] } を足す
+const providers = { stations: BundledStationProvider, cinemas: [OverpassCinemaProvider, SampleCinemaProvider] };
+
+const mapOf = c => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.name)}&center=${c.lat},${c.lng}`;
+const ICON_WEB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>';
+const ICON_PIN = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>';
+
+/* ---- 状態 ---- */
+const state = { mode: "here", origin: null, cinemas: [], usedSample: false };
+const store = {   // この端末だけに保存。使えない環境でも動くように try で包む
+  get(k, d) { try { const v = localStorage.getItem("mfl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("mfl:" + k, JSON.stringify(v)); } catch (e) {} },
+};
+let favs = store.get("favs", []);   // [{name, lat, lng, url}]
+const isFav = c => favs.some(f => f.name === c.name);
+const ICON_HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 20s-7-4.3-8.9-8.6C1.7 8.3 3.6 5 6.9 5c2 0 3.3 1.1 5.1 2.8C13.8 6.1 15.1 5 17.1 5c3.3 0 5.2 3.3 3.8 6.4C19 15.7 12 20 12 20z"/></svg>';
+
+async function searchFrom(label, p) {
+  state.origin = { label, ...p };
+  $("pick").hidden = true;
+  $("sum").textContent = "探しています…"; $("out").innerHTML = "";
+  let cinemas = [];
+  for (const prov of providers.cinemas) {
+    try { cinemas = await prov.near(p, radiusM()); state.usedSample = prov === SampleCinemaProvider; break; } catch (e) {}
+  }
+  state.cinemas = cinemas.map(c => ({ ...c, walk: walkMin() ? Math.max(1, Math.round(dist(p, c) * DETOUR / WALK)) : 0 }));
+  state.cinemas.sort((a, b) => a.walk - b.walk || dist(p, a) - dist(p, b));
+  render();
+}
+
+const ICON_OUT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>';
+
+function render() {
+  const sample = $("sampleNote");
+  sample.hidden = !state.usedSample;
+  sample.textContent = `いまは OpenStreetMap に接続できないため、内蔵リスト（${SAMPLE_AREAS}周辺の主な劇場）から表示しています。`;
+  if (!state.origin) return;
+  const here = !walkMin(), now = Date.now();
+  const where = here ? "半径200m" : walkLabel().replace(/ /g, "") + "以内";
+  $("sum").innerHTML = `<b>${esc(state.origin.label)}</b>から${esc(where)}の映画館 <b>${state.cinemas.length}館</b>`;
+  if (!state.cinemas.length) return msg(`${where}に映画館がありません。${state.usedSample ? `この画面で出せるのは ${SAMPLE_AREAS} の周辺だけです。` : "スライダーを右に動かしてみてください。"}`);
+  $("out").innerHTML = state.cinemas.map((c, i) => `
+    <article class="card">
+      <header>
+        <h3>${esc(c.name)}<small>${c.walk ? `徒歩${c.walk}分` : "いまここ"}</small></h3>
+        <button type="button" class="fav" data-i="${i}" aria-pressed="${isFav(c)}" aria-label="${esc(c.name)}をお気に入り">${ICON_HEART}</button>
+        <a href="${esc(mapOf(c))}" target="_blank" rel="noopener" aria-label="${esc(c.name)}の地図">${ICON_PIN}</a>
+      </header>
+      <div class="body">
+        <span class="eta">${c.walk ? `いま出ると<b>${hm(new Date(now + c.walk * 60000))}</b>着` : "すぐそこ"}</span>
+        <a class="sched" href="${esc(siteOf(c))}" target="_blank" rel="noopener">上映スケジュール${ICON_OUT}</a>
+      </div>
+    </article>`).join("");
+}
+function msg(t) { $("out").innerHTML = `<p class="msg">${esc(t)}</p>`; }
+function fail(sum, body) { state.origin = null; $("sum").textContent = sum; msg(body); }
+
+/* ---- お気に入り・設定・タブ ---- */
+function toggleFav(c) {
+  favs = isFav(c) ? favs.filter(f => f.name !== c.name) : [...favs, { name: c.name, lat: c.lat, lng: c.lng, url: c.url || "" }];
+  store.set("favs", favs);
+}
+function renderFavs() {
+  $("favList").innerHTML = favs.length ? favs.map((f, i) => `
+    <article class="card"><header>
+      <h3>${esc(f.name)}</h3>
+      <button type="button" class="fav" data-f="${i}" aria-pressed="true" aria-label="${esc(f.name)}をお気に入りから外す">${ICON_HEART}</button>
+      <a href="${esc(siteOf(f))}" target="_blank" rel="noopener" aria-label="${esc(f.name)}の上映スケジュール（公式サイト）">${ICON_WEB}</a>
+      <a href="${esc(mapOf(f))}" target="_blank" rel="noopener" aria-label="${esc(f.name)}の地図">${ICON_PIN}</a>
+    </header></article>`).join("") : `<p class="msg">まだありません。検索結果の劇場名の横にある ♡ を押すと、ここに並びます。</p>`;
+}
+function showTab(t) {
+  for (const [id, view] of [["tabSearch", "viewSearch"], ["tabFav", "viewFav"], ["tabSettings", "viewSettings"]]) {
+    const on = id === t;
+    $(view).hidden = !on;
+    on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
+  }
+  if (t === "tabFav") renderFavs();
+  if (t === "tabSettings") renderSettings();
+  window.scrollTo(0, 0);
+}
+function pressOne(box, v) { for (const b of $(box).querySelectorAll("button")) b.setAttribute("aria-pressed", b.dataset.v === v); }
+function renderSettings() { pressOne("setMode", store.get("mode", "here")); pressOne("setTheme", store.get("theme", ""));}
+function applyTheme(t) { t ? document.documentElement.setAttribute("data-theme", t) : document.documentElement.removeAttribute("data-theme"); }
+function paintSlider() { $("walk").style.setProperty("--fill", `${walkMin() / 30 * 100}%`); }
+
+/* ---- 検索の入口 ---- */
+async function searchStation() {
+  const q = $("station").value;
+  if (!norm(q)) { $("station").focus(); return fail("駅名を入れてください", "例: 新宿、渋谷、梅田"); }
+  let hits;
+  try { hits = await providers.stations.find(q); } catch (e) { return fail("駅データを読み込めません", "通信状況を確かめてもう一度お試しください。"); }
+  if (!hits.length) return fail("駅が見つかりません", "駅名を確かめてもう一度お試しください。");
+  if (hits.length === 1) return pickStation(hits[0]);
+  $("pick").innerHTML = "どの駅？ " + hits.map((s, i) => `<button type="button" data-i="${i}">${esc(s.name)}（${esc(s.pref)}）</button>`).join("");
+  $("pick").hidden = false;
+  $("pick").onclick = e => { const b = e.target.closest("button"); if (b) pickStation(hits[+b.dataset.i]); };
+}
+function pickStation(s) {
+  $("station").value = s.name;
+  try { localStorage.setItem("mfl:last", `${s.name}（${s.pref}）`); } catch (e) {}
+  searchFrom(`${s.name}駅`, s);
+}
+function searchHere() {
+  const btn = $("go");
+  if (!navigator.geolocation) return fail("現在地を使えません", "「駅から入力」に切り替えて駅名で探してください。");
+  btn.setAttribute("aria-busy", "true"); btn.textContent = "現在地を確認中…";
+  const done = () => { btn.removeAttribute("aria-busy"); btn.textContent = "いまミル！検索"; };
+  navigator.geolocation.getCurrentPosition(pos => {
+    done(); searchFrom("現在地", { lat: pos.coords.latitude, lng: pos.coords.longitude });
+  }, err => {
+    done();
+    fail("現在地を取得できません", err.code === 1 ? "位置情報が許可されていません。「駅から入力」に切り替えて駅名で探してください。" : "もう一度押すか、「駅から入力」で駅名から探してください。");
+  }, { timeout: 10000, maximumAge: 60000 });
+}
+const search = () => state.mode === "here" ? searchHere() : searchStation();
+
+function setMode(m) {
+  state.mode = m;
+  $("modeHere").setAttribute("aria-pressed", m === "here");
+  $("modeStation").setAttribute("aria-pressed", m === "station");
+  $("stForm").hidden = m !== "station";
+  if (m === "station") $("station").focus(); else $("pick").hidden = true;
+}
+
+$("infoBtn").addEventListener("click", () => { const open = $("info").hidden; $("info").hidden = !open; $("infoBtn").setAttribute("aria-expanded", open); });
+$("modeHere").addEventListener("click", () => setMode("here"));
+$("modeStation").addEventListener("click", () => setMode("station"));
+$("stForm").addEventListener("submit", e => { e.preventDefault(); searchStation(); });
+$("go").addEventListener("click", search);
+$("walk").addEventListener("input", () => { $("walkOut").textContent = walkLabel(); paintSlider(); });
+$("out").addEventListener("click", e => { const b = e.target.closest(".fav"); if (!b) return; toggleFav(state.cinemas[+b.dataset.i]); b.setAttribute("aria-pressed", isFav(state.cinemas[+b.dataset.i])); });
+$("favList").addEventListener("click", e => { const b = e.target.closest(".fav"); if (!b) return; favs.splice(+b.dataset.f, 1); store.set("favs", favs); renderFavs(); });
+$("tabSearch").addEventListener("click", () => showTab("tabSearch"));
+$("tabFav").addEventListener("click", () => showTab("tabFav"));
+$("tabSettings").addEventListener("click", () => showTab("tabSettings"));
+$("gearBtn").addEventListener("click", () => showTab("tabSettings"));
+$("setMode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; store.set("mode", b.dataset.v); setMode(b.dataset.v); renderSettings(); });
+$("setTheme").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; store.set("theme", b.dataset.v); applyTheme(b.dataset.v); renderSettings(); });
+$("clearFav").addEventListener("click", () => { favs = []; store.set("favs", favs); render(); renderSettings(); });
+$("walk").addEventListener("change", () => { try { localStorage.setItem("mfl:walk", $("walk").value); } catch (e) {} if (state.origin) searchFrom(state.origin.label, state.origin); });
+setInterval(render, 30000);
+try {
+  const w = localStorage.getItem("mfl:walk"); if (w) $("walk").value = w;
+  const last = localStorage.getItem("mfl:last"); if (last) $("station").value = last;
+} catch (e) {}
+$("walkOut").textContent = walkLabel(); paintSlider();
+applyTheme(store.get("theme", ""));
+if (store.get("mode", "here") === "station") { state.mode = "station"; $("modeHere").setAttribute("aria-pressed", false); $("modeStation").setAttribute("aria-pressed", true); $("stForm").hidden = false; }
+// 軽さ優先: 開いた時点では何も読み込まない（駅データは駅から検索したときだけ）
+</script>
+</body>
+</html>
