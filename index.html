@@ -266,21 +266,23 @@ function placeName(t, cat) {
   return t.name || (cat.id === "atm" ? (t.operator || t.brand || "ATM") : t.brand || "");
 }
 const OverpassPlaceProvider = {
-  async near(cat, p, r) {
+  async near(cat, p, r, signal) {
     const q = `[out:json][timeout:15];(${cat.q.map(x => `${x}(around:${r},${p.lat},${p.lng});`).join("")});out center tags;`;
     let lastErr;
     for (const url of OVERPASS) {
       try {
-        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 15000);
+        if (signal?.aborted) throw new Error("aborted");
+        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 15000), stop = () => ctl.abort();
+        signal?.addEventListener("abort", stop);
         const res = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: ctl.signal });
-        clearTimeout(t);
+        clearTimeout(t); signal?.removeEventListener("abort", stop);
         if (!res.ok) throw new Error(res.status);
         const data = await res.json();
         return data.elements.filter(e => e.tags).map(e => {
           const t = e.tags;
           return { name: placeName(t, cat), cat: cat.id, sub: cat.id === "atm" && t.amenity !== "atm" ? "店内ATM" : "", url: t.website || t["contact:website"] || "", hours: t.opening_hours || "", lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon };
         }).filter(x => x.name);
-      } catch (e) { lastErr = e; }
+      } catch (e) { lastErr = e; if (signal?.aborted) break; }
     }
     throw lastErr;
   },
@@ -344,7 +346,15 @@ function actionOf(c) {
 }
 
 /* ---- 状態 ---- */
-const state = { mode: "here", cat: null, origin: null, places: [], usedSample: false, failed: false };
+const state = { mode: "here", cat: null, origin: null, places: [], usedSample: false, failed: false, run: null };
+// ボタンを押すたびに新しい「検索」を始め、前の検索は止める。古い結果は画面に出さない
+function newRun() {
+  state.run?.ctl.abort();
+  state.run = { ctl: new AbortController() };
+  state.origin = null; state.places = []; state.usedSample = false; state.failed = false;
+  $("out").innerHTML = "";
+  return state.run;
+}
 const store = {   // この端末だけに保存。使えない環境でも動くように try で包む
   get(k, d) { try { const v = localStorage.getItem("mfl:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem("mfl:" + k, JSON.stringify(v)); } catch (e) {} },
@@ -352,16 +362,18 @@ const store = {   // この端末だけに保存。使えない環境でも動�
 let favs = store.get("favs", []).map(f => ({ cat: "cinema", ...f }));   // [{name, cat, lat, lng, url, hours}]
 const isFav = c => favs.some(f => f.name === c.name && f.cat === c.cat && Math.abs(f.lat - c.lat) < 1e-3);
 
-async function searchFrom(label, p) {
+async function searchFrom(label, p, run) {
+  if (run !== state.run) return;   // 待っている間に別のボタンが押された
   const cat = catOf(state.cat);
-  state.origin = { label, ...p };
+  state.lastFrom = { label, ...p };
   $("pick").hidden = true;
   $("sum").textContent = `${cat.label}を探しています…`; $("out").innerHTML = "";
-  let places = null; state.usedSample = false; state.failed = false;
+  let places = null, usedSample = false;
   for (const prov of providers.places) {
-    try { places = await prov.near(cat, p, radiusM()); state.usedSample = prov === SamplePlaceProvider; break; } catch (e) {}
+    try { places = await prov.near(cat, p, radiusM(), run.ctl.signal); usedSample = prov === SamplePlaceProvider; break; } catch (e) { if (run.ctl.signal.aborted) return; }
   }
-  if (state.cat !== cat.id) return;   // 待っている間に別のボタンが押された
+  if (run !== state.run) return;
+  state.origin = { label, ...p }; state.usedSample = usedSample;
   if (!places) { state.failed = true; places = []; }
   // 同じお店が点と建物の両方で登録されていることがあるので、名前と位置が近いものはまとめる
   const seen = new Set();
@@ -429,37 +441,40 @@ function applyTheme(t) { t ? document.documentElement.setAttribute("data-theme",
 function paintSlider() { $("walk").style.setProperty("--fill", `${walkMin() / 30 * 100}%`); }
 
 /* ---- 検索の入口 ---- */
-async function searchStation() {
+async function searchStation(run) {
   const q = $("station").value;
   if (!norm(q)) { $("station").focus(); return fail("駅名を入れてください", "例: 新宿、渋谷、梅田"); }
   let hits;
   try { hits = await providers.stations.find(q); } catch (e) { return fail("駅データを読み込めません", "通信状況を確かめてもう一度お試しください。"); }
+  if (run !== state.run) return;
   if (!hits.length) return fail("駅が見つかりません", "駅名を確かめてもう一度お試しください。");
-  if (hits.length === 1) return pickStation(hits[0]);
+  if (hits.length === 1) return pickStation(hits[0], run);
   $("pick").innerHTML = "どの駅？ " + hits.map((s, i) => `<button type="button" data-i="${i}">${esc(s.name)}（${esc(s.pref)}）</button>`).join("");
   $("pick").hidden = false;
-  $("pick").onclick = e => { const b = e.target.closest("button"); if (b) pickStation(hits[+b.dataset.i]); };
+  $("pick").onclick = e => { const b = e.target.closest("button"); if (b) pickStation(hits[+b.dataset.i], state.run); };
 }
-function pickStation(s) {
+function pickStation(s, run) {
   $("station").value = s.name;
   try { localStorage.setItem("mfl:last", `${s.name}（${s.pref}）`); } catch (e) {}
-  searchFrom(`${s.name}駅`, s);
+  searchFrom(`${s.name}駅`, s, run);
 }
-function searchHere() {
+function searchHere(run) {
   const box = $("cats");
   if (!navigator.geolocation) return fail("現在地を使えません", "「駅から入力」に切り替えて駅名で探してください。");
   box.setAttribute("aria-busy", "true"); $("sum").textContent = "現在地を確認中…"; $("out").innerHTML = "";
   navigator.geolocation.getCurrentPosition(pos => {
-    box.removeAttribute("aria-busy"); searchFrom("現在地", { lat: pos.coords.latitude, lng: pos.coords.longitude });
+    box.removeAttribute("aria-busy"); searchFrom("現在地", { lat: pos.coords.latitude, lng: pos.coords.longitude }, run);
   }, err => {
     box.removeAttribute("aria-busy");
+    if (run !== state.run) return;
     fail("現在地を取得できません", err.code === 1 ? "位置情報が許可されていません。「駅から入力」に切り替えて駅名で探してください。" : "もう一度押すか、「駅から入力」で駅名から探してください。");
   }, { timeout: 10000, maximumAge: 60000 });
 }
 function search(catId) {
   state.cat = catId;
   pressOne("cats", catId);
-  state.mode === "here" ? searchHere() : searchStation();
+  const run = newRun();
+  state.mode === "here" ? searchHere(run) : searchStation(run);
 }
 
 function setMode(m) {
@@ -475,7 +490,7 @@ $("cats").addEventListener("click", e => { const b = e.target.closest("button");
 $("infoBtn").addEventListener("click", () => { const open = $("info").hidden; $("info").hidden = !open; $("infoBtn").setAttribute("aria-expanded", open); });
 $("modeHere").addEventListener("click", () => setMode("here"));
 $("modeStation").addEventListener("click", () => setMode("station"));
-$("stForm").addEventListener("submit", e => { e.preventDefault(); $("station").blur(); if (state.cat) searchStation(); else fail("駅を決めたら", "下のボタンから探したいものを選んでください。"); });
+$("stForm").addEventListener("submit", e => { e.preventDefault(); $("station").blur(); if (state.cat) searchStation(newRun()); else fail("駅を決めたら", "下のボタンから探したいものを選んでください。"); });
 $("walk").addEventListener("input", () => { $("walkOut").textContent = walkLabel(); paintSlider(); });
 $("out").addEventListener("click", e => { const b = e.target.closest(".fav"); if (!b) return; const c = state.places[+b.dataset.i]; toggleFav(c); b.setAttribute("aria-pressed", isFav(c)); });
 $("favList").addEventListener("click", e => { const b = e.target.closest(".fav"); if (!b) return; favs.splice(+b.dataset.f, 1); store.set("favs", favs); renderFavs(); });
@@ -486,7 +501,7 @@ $("gearBtn").addEventListener("click", () => showTab("tabSettings"));
 $("setMode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; store.set("mode", b.dataset.v); setMode(b.dataset.v); renderSettings(); });
 $("setTheme").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; store.set("theme", b.dataset.v); applyTheme(b.dataset.v); renderSettings(); });
 $("clearFav").addEventListener("click", () => { favs = []; store.set("favs", favs); render(); renderSettings(); });
-$("walk").addEventListener("change", () => { try { localStorage.setItem("mfl:walk", $("walk").value); } catch (e) {} if (state.origin && state.cat) searchFrom(state.origin.label, state.origin); });
+$("walk").addEventListener("change", () => { try { localStorage.setItem("mfl:walk", $("walk").value); } catch (e) {} if (state.lastFrom && state.cat) { const f = state.lastFrom; searchFrom(f.label, f, newRun()); } });
 setInterval(() => { if (!$("viewSearch").hidden) render(); }, 30000);
 try {
   const w = localStorage.getItem("mfl:walk"); if (w) $("walk").value = w;
