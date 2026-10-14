@@ -122,6 +122,7 @@ h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
       <li>「0（現在地）」は半径200m以内、つまり目の前のお店だけを出します。</li>
       <li><b>営業中</b>・<b>時間外</b> は OpenStreetMap に登録された営業時間から出しています。登録の無いお店は表示しません。祝日や臨時休業は反映されないので、目安にしてください。</li>
       <li>ラーメンは「ラーメン」と登録されたお店か、店名にラーメン・らーめん・拉麺・中華そばを含むお店。軽食はカフェ・ファストフード・パン屋。ATM は単独のATMと、ATMありと登録されたコンビニや銀行です。</li>
+      <li>軽食のジャンル（牛丼・ケバブ・そば など）は OpenStreetMap に登録された料理の種類、無ければ大手チェーン名や店名から出しています。ラーメンの種類（家系・とんこつ・しょうゆ など）は地図データに項目が無いため、店名に含まれる言葉と、味がはっきりしている大手チェーン名からだけ出しています。わからないお店には何も付けません。</li>
     </ul>
     <h2>データの出典</h2>
     <ul>
@@ -261,6 +262,24 @@ const BundledStationProvider = {
   },
 };
 const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+/* ---- ジャンル（ラーメン・軽食だけ）。確かなものだけ出し、わからなければ何も出さない ---- */
+// ラーメンの種類: 地図データに項目が無いので、店名の言葉と、味がはっきりしている大手チェーン名から判定
+const RAMEN_WORDS = [[/家系/, "家系"], [/二郎/, "二郎系"], [/つけ麺|つけめん/, "つけ麺"], [/担々|坦々|担担/, "担々麺"], [/タンメン/, "タンメン"], [/油そば|まぜそば/, "油そば"], [/豚骨|とんこつ|トンコツ/, "とんこつ"], [/鶏白湯|鶏そば|鶏ラーメン/, "鶏"], [/味噌|みそ|ミソ/, "みそ"], [/醤油|しょうゆ|しょう油/, "しょうゆ"], [/煮干|にぼし|ニボシ/, "煮干し"], [/塩らー|塩ラー|しおらー|塩そば/, "しお"]];
+const RAMEN_CHAINS = [[/一蘭|一風堂|一幸舎|ずんどう屋|博多風龍|一竜|長浜ナンバーワン/, "とんこつ"], [/町田商店|壱角家|魂心家|吉村家|杉田家|武蔵家|王道家/, "家系"], [/天下一品/, "こってり"], [/幸楽苑|魁力屋|来来亭/, "しょうゆ"], [/中本/, "辛みそ"], [/すみれ|味噌乃家/, "みそ"]];
+// 軽食: OpenStreetMap の cuisine（料理の種類）を日本語に。無ければ大手チェーン名と店名の言葉から
+const CUISINE_JA = { burger: "ハンバーガー", beef_bowl: "牛丼", kebab: "ケバブ", soba: "そば", udon: "うどん", coffee_shop: "カフェ", cafe: "カフェ", sandwich: "サンドイッチ", donut: "ドーナツ", chicken: "チキン", fried_chicken: "チキン", pizza: "ピザ", curry: "カレー", sushi: "寿司", ramen: "ラーメン", onigiri: "おにぎり", bubble_tea: "タピオカ", crepe: "クレープ", ice_cream: "アイス", takoyaki: "たこ焼き", gyoza: "餃子", tea: "お茶", juice: "ジュース", hot_dog: "ホットドッグ", bagel: "ベーグル", pancake: "パンケーキ", dessert: "スイーツ", cake: "ケーキ", tempura: "天丼", tendon: "天丼", katsudon: "かつ丼", donburi: "丼", taiyaki: "たい焼き", noodle: "麺", mexican: "タコス", tacos: "タコス", fish_and_chips: "フィッシュ&チップス", italian: "イタリアン", chinese: "中華", korean: "韓国", thai: "タイ", indian: "インド", vietnamese: "ベトナム" };
+const SNACK_CHAINS = [[/吉野家|すき家|松屋|なか卯/, "牛丼"], [/マクドナルド|モスバーガー|バーガーキング|ロッテリア|ゼッテリア|フレッシュネス|ファーストキッチン/, "ハンバーガー"], [/スターバックス|ドトール|タリーズ|コメダ|エクセルシオール|ベローチェ|サンマルク|プロント|上島珈琲|星乃珈琲/, "カフェ"], [/富士そば|小諸そば|ゆで太郎|箱根そば/, "そば"], [/丸亀製麺|はなまるうどん/, "うどん"], [/ケンタッキー/, "チキン"], [/ミスタードーナツ|ミスド/, "ドーナツ"], [/CoCo壱番屋|ココイチ|ゴーゴーカレー/, "カレー"], [/サブウェイ|SUBWAY/i, "サンドイッチ"], [/てんや/, "天丼"], [/かつや/, "かつ丼"]];
+const SNACK_WORDS = [[/ケバブ/, "ケバブ"], [/牛丼/, "牛丼"], [/うどん/, "うどん"], [/カレー/, "カレー"], [/バーガー/, "ハンバーガー"], [/珈琲|コーヒー|カフェ|喫茶/, "カフェ"], [/ベーカリー|ブーランジェリー|パン屋/, "パン"]];
+const firstHit = (list, name) => (list.find(([re]) => re.test(name)) || [])[1] || "";
+function genreOf(t, cat) {
+  const name = t.name || "", brand = t.brand || "";
+  if (cat.id === "ramen") return firstHit(RAMEN_WORDS, name) || firstHit(RAMEN_CHAINS, name + " " + brand);
+  if (cat.id !== "snack") return "";
+  const cs = (t.cuisine || "").split(";").map(x => x.trim()).map(x => CUISINE_JA[x]).filter(Boolean);
+  if (cs.length) return [...new Set(cs)].slice(0, 2).join("・");
+  if (t.shop === "bakery") return "パン";
+  return firstHit(SNACK_CHAINS, name + " " + brand) || (/中華そば/.test(name) ? "" : /そば|蕎麦/.test(name) ? "そば" : firstHit(SNACK_WORDS, name));
+}
 function placeName(t, cat) {
   if (cat.id === "atm" && t.amenity !== "atm") return t.name ? `${t.name}` : "";
   return t.name || (cat.id === "atm" ? (t.operator || t.brand || "ATM") : t.brand || "");
@@ -280,7 +299,7 @@ const OverpassPlaceProvider = {
         const data = await res.json();
         return data.elements.filter(e => e.tags).map(e => {
           const t = e.tags;
-          return { name: placeName(t, cat), cat: cat.id, sub: cat.id === "atm" && t.amenity !== "atm" ? "店内ATM" : "", url: t.website || t["contact:website"] || "", hours: t.opening_hours || "", lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon };
+          return { name: placeName(t, cat), cat: cat.id, sub: cat.id === "atm" && t.amenity !== "atm" ? "店内ATM" : genreOf(t, cat), url: t.website || t["contact:website"] || "", hours: t.opening_hours || "", lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon };
         }).filter(x => x.name);
       } catch (e) { lastErr = e; if (signal?.aborted) break; }
     }
