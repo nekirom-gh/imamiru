@@ -84,6 +84,8 @@ main { max-width: 520px; margin: 0 auto; padding-inline: 16px; padding-block: 14
 .oh { font-size: .82rem; color: var(--muted); }
 .oh b { font-weight: 700; }
 .oh .on { color: var(--ok); }
+.famous { justify-self: start; display: inline-block; padding: 1px 10px; border-radius: 99px; border: 1.5px solid var(--strong); color: var(--strong); font-size: .78rem; font-weight: 800; text-decoration: none; }
+a.famous::after { content: " ↗"; font-weight: 400; }
 .sched { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 99px; background: var(--strong); color: var(--on-strong); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .sched svg { width: 16px; height: 16px; }
 .msg { padding: 28px 8px; text-align: center; color: var(--muted); }
@@ -128,6 +130,7 @@ h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
       <li><b>営業中</b>・<b>時間外</b> は OpenStreetMap に登録された営業時間から出しています。登録の無いお店は表示しません。祝日や臨時休業は反映されないので、目安にしてください。</li>
       <li>ラーメンは「ラーメン」と登録されたお店か、店名にラーメン・らーめん・拉麺・中華そばを含むお店。軽食はカフェ・ファストフード・パン屋。ATM は単独のATMと、ATMありと登録されたコンビニや銀行です。</li>
       <li>軽食のジャンル（牛丼・ケバブ・そば など）は OpenStreetMap に登録された料理の種類、無ければ大手チェーン名や店名から出しています。ラーメンの種類（家系・とんこつ・しょうゆ など）は地図データに項目が無いため、店名に含まれる言葉と、味がはっきりしている大手チェーン名からだけ出しています。わからないお店には何も付けません。</li>
+      <li><b>有名店</b> マークは、OpenStreetMap で Wikipedia の記事とつながっているお店に付けています。人気や評価の順位ではなく、老舗や名所として記事があるお店の目印です（チェーン店の各店舗には付きません）。マークを押すと記事が開きます。</li>
     </ul>
     <h2>データの出典</h2>
     <ul>
@@ -286,6 +289,12 @@ function genreOf(t, cat) {
   if (t.shop === "bakery") return "パン";
   return firstHit(SNACK_CHAINS, name + " " + brand) || (/中華そば/.test(name) ? "" : /そば|蕎麦/.test(name) ? "そば" : firstHit(SNACK_WORDS, name));
 }
+// 有名店: お店そのものに Wikipedia / Wikidata が付いているとき（brand:wikidata はチェーン全体なので見ない）
+function wikiOf(t) {
+  const w = (t.wikipedia || "").match(/^([a-z-]+):(.+)$/);
+  if (w) return `https://${w[1]}.wikipedia.org/wiki/${encodeURIComponent(w[2].replace(/ /g, "_"))}`;
+  return t.wikidata ? "wikidata" : "";
+}
 function placeName(t, cat) {
   if (cat.id === "atm" && t.amenity !== "atm") return t.name ? `${t.name}` : "";
   return t.name || (cat.id === "atm" ? (t.operator || t.brand || "ATM") : t.brand || "");
@@ -305,7 +314,7 @@ const OverpassPlaceProvider = {
         const data = await res.json();
         return data.elements.filter(e => e.tags).map(e => {
           const t = e.tags;
-          return { name: placeName(t, cat), cat: cat.id, sub: cat.id === "atm" && t.amenity !== "atm" ? "店内ATM" : genreOf(t, cat), url: t.website || t["contact:website"] || "", hours: t.opening_hours || "", lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon };
+          return { name: placeName(t, cat), cat: cat.id, sub: cat.id === "atm" && t.amenity !== "atm" ? "店内ATM" : genreOf(t, cat), url: t.website || t["contact:website"] || "", hours: t.opening_hours || "", wiki: wikiOf(t), lat: e.lat ?? e.center.lat, lng: e.lon ?? e.center.lon };
         }).filter(x => x.name);
       } catch (e) { lastErr = e; if (signal?.aborted) break; }
     }
@@ -444,6 +453,7 @@ async function searchFrom(label, p, run) {
 
 function cardHtml(c, i, inFav) {
   const h = hoursNow(c.hours), act = actionOf(c), cat = catOf(c.cat);
+  const famous = c.wiki ? (c.wiki.startsWith("http") ? `<a class="famous" href="${esc(c.wiki)}" target="_blank" rel="noopener" aria-label="有名店（Wikipedia の記事を開く）">有名店</a>` : `<span class="famous">有名店</span>`) : "";
   const status = h ? `<span class="oh">${h.open ? `<b class="on">営業中</b>` : `<b>時間外</b>`}${h.text ? ` ${esc(h.text)}` : ""}</span>` : "";
   const meta = inFav ? `${cat.icon} ${cat.label}` : (c.walk ? `徒歩${c.walk}分` : "いまここ");
   return `
@@ -453,8 +463,8 @@ function cardHtml(c, i, inFav) {
         <button type="button" class="fav" data-${inFav ? "f" : "i"}="${i}" aria-pressed="${isFav(c)}" aria-label="${esc(c.name)}をお気に入り${isFav(c) ? "から外す" : ""}">${ICON_HEART}</button>
         <a href="${esc(mapOf(c))}" target="_blank" rel="noopener" aria-label="${esc(c.name)}の地図">${ICON_PIN}</a>
       </header>
-      ${inFav && !status && !act ? "" : `<div class="body">
-        <span class="left">${inFav ? "" : `<span class="eta">${c.walk ? `いま出ると<b>${hm(new Date(Date.now() + c.walk * 60000))}</b>着` : "すぐそこ"}</span>`}${status}</span>
+      ${inFav && !status && !act && !famous ? "" : `<div class="body">
+        <span class="left">${famous}${inFav ? "" : `<span class="eta">${c.walk ? `いま出ると<b>${hm(new Date(Date.now() + c.walk * 60000))}</b>着` : "すぐそこ"}</span>`}${status}</span>
         ${act ? `<a class="sched" href="${esc(act.href)}" target="_blank" rel="noopener">${act.label}${ICON_OUT}</a>` : ""}
       </div>`}
     </article>`;
@@ -477,7 +487,7 @@ function fail(sum, body) { loadEnd(); $("sum").textContent = sum; msg(body); }
 
 /* ---- お気に入り・設定・タブ ---- */
 function toggleFav(c) {
-  favs = isFav(c) ? favs.filter(f => !(f.name === c.name && f.cat === c.cat && Math.abs(f.lat - c.lat) < 1e-3)) : [...favs, { name: c.name, cat: c.cat, sub: c.sub || "", lat: c.lat, lng: c.lng, url: c.url || "", hours: c.hours || "" }];
+  favs = isFav(c) ? favs.filter(f => !(f.name === c.name && f.cat === c.cat && Math.abs(f.lat - c.lat) < 1e-3)) : [...favs, { name: c.name, cat: c.cat, sub: c.sub || "", lat: c.lat, lng: c.lng, url: c.url || "", hours: c.hours || "", wiki: c.wiki || "" }];
   store.set("favs", favs);
 }
 function renderFavs() {
