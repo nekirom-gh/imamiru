@@ -90,6 +90,12 @@ a.famous::after { content: " ↗"; font-weight: 400; }
 .sched svg { width: 16px; height: 16px; }
 .msg { padding: 28px 8px; text-align: center; color: var(--muted); }
 .note { margin-top: 20px; font-size: .72rem; color: var(--muted); text-align: center; }
+.fb { margin-top: 16px; padding: 12px; border: 1.5px dashed var(--frame); border-radius: 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; font-size: .9rem; }
+.fb span { flex-basis: 100%; text-align: center; }
+.fb button { padding: 6px 14px; border-radius: 99px; border: 1.5px solid var(--strong); background: var(--surface); font-weight: 700; }
+.credit { margin-top: 10px; text-align: center; }
+.xbtn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 99px; background: var(--ink); color: var(--bg); font-size: .85rem; font-weight: 700; text-decoration: none; }
+.xbtn svg { width: 16px; height: 16px; }
 
 h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
 .favlist, .settings { display: grid; gap: 12px; }
@@ -166,7 +172,9 @@ h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
     <div class="sum" id="sum">ボタンを押すと、歩いて行けるお店を近い順に出します。</div>
   </section>
   <div class="cards" id="out"></div>
-  <p class="note">使い方とデータの出典は右上の ⓘ</p>
+  <div class="fb" id="fb" hidden></div>
+  <p class="note">使い方とデータの出典は右上の ⓘ<span id="logMini" hidden>　検索は匿名で記録しています</span></p>
+  <p class="credit"><a class="xbtn" href="https://x.com/longlong_kobo" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8zm-1.1 16.2h1.7L7.4 4.7H5.6z"/></svg>制作：長々工房</a></p>
   </div>
 
   <div id="viewFav" hidden>
@@ -180,6 +188,7 @@ h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
       <div class="row"><span class="lbl">開いたときの探し方</span><div class="opts" id="setMode"><button type="button" data-v="here">現在地から</button><button type="button" data-v="station">駅から入力</button></div></div>
       <div class="row"><span class="lbl">表示</span><div class="opts" id="setTheme"><button type="button" data-v="">端末に合わせる</button><button type="button" data-v="light">ライト</button><button type="button" data-v="dark">ダーク</button></div></div>
       <div class="row"><span class="lbl">お気に入り</span><div class="opts"><button type="button" id="clearFav">すべて消す</button></div><small>お気に入りと設定はこの端末のブラウザにだけ保存されます。</small></div>
+      <div class="row"><span class="lbl">制作</span><div class="opts"><a class="xbtn" href="https://x.com/longlong_kobo" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.8 3h3.1l-6.8 7.8L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.3-8.3L1.9 3h6.4l4.4 5.8zm-1.1 16.2h1.7L7.4 4.7H5.6z"/></svg>長々工房（X）</a></div><small>ご意見・ご要望はこちらへどうぞ。</small></div>
     </div>
   </div>
 </main>
@@ -417,6 +426,7 @@ function newRun() {
   state.run?.ctl.abort();
   state.run = { ctl: new AbortController() };
   state.origin = null; state.places = []; state.usedSample = false; state.failed = false;
+  $("fb").hidden = true;
   $("out").innerHTML = "";
   return state.run;
 }
@@ -480,7 +490,15 @@ function cardHtml(c, i, inFav) {
       </div>`}
     </article>`;
 }
+// 高評価ボタン: 結果が出たら「役に立った？」を出し、押されたら記録に送る（記録の送り先があるときだけ）
+function renderFb() {
+  const fb = $("fb");
+  fb.hidden = !(LOG_URL && state.origin && !state.failed);
+  if (fb.hidden) return;
+  fb.innerHTML = state.run.rated ? "ありがとうございます！" : `<span>この結果は役に立った？</span><button type="button" data-v="good">👍 よかった</button><button type="button" data-v="bad">👎 いまいち</button>`;
+}
 function render() {
+  renderFb();
   const sample = $("sampleNote");
   sample.hidden = !state.usedSample;
   sample.textContent = `いまは OpenStreetMap に接続できないため、映画館は内蔵リスト（${SAMPLE_AREAS}周辺の主な劇場）から表示しています。`;
@@ -590,7 +608,13 @@ try {
   const last = localStorage.getItem("mfl:last"); if (last) $("station").value = last;
 } catch (e) {}
 $("walkOut").textContent = walkLabel(); paintSlider();
-$("logNote").hidden = !LOG_URL;
+$("logNote").hidden = $("logMini").hidden = !LOG_URL;
+$("fb").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b || !state.origin) return;
+  state.run.rated = true;
+  logSearch({ type: "feedback", vote: b.dataset.v === "good" ? "👍" : "👎", cat: catOf(state.cat).label, walk: walkMin(), n: state.places.length });
+  renderFb();
+});
 applyTheme(store.get("theme", ""));
 if (store.get("mode", "here") === "station") { state.mode = "station"; $("modeHere").setAttribute("aria-pressed", false); $("modeStation").setAttribute("aria-pressed", true); $("stForm").hidden = false; }
 // 軽さ優先: 開いた時点では何も読み込まない（駅データは駅から検索したときだけ）
