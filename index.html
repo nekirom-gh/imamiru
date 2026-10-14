@@ -139,6 +139,7 @@ h2.view { font-size: 1.1rem; margin: 4px 0 12px; }
       <li>上映スケジュールボタンの行き先: 各劇場の公式サイト（OpenStreetMap の登録情報、または主な劇場は2026年10月に確認したURL。どちらも無い劇場は検索結果）</li>
       <li>上映スケジュール: このアプリには載せていません。各劇場の公式サイトで確認してください。</li>
       <li id="sampleNote" hidden></li>
+      <li id="logNote" hidden>検索の記録: サービス改善のため、ジャンル・徒歩の分数・件数・かかった秒数と、約1km単位に丸めた位置（駅から探したときは駅名）を匿名で記録しています。名前や正確な現在地は送りません。</li>
     </ul>
   </section>
 
@@ -258,6 +259,12 @@ const CATS = [
 ];
 const catOf = id => CATS.find(c => c.id === id);
 const MAX_SHOWN = 40;
+// 検索の記録の送り先（Google スプレッドシートの Apps Script ウェブアプリ URL）。空なら何も送らない
+const LOG_URL = "";
+function logSearch(d) {
+  if (!LOG_URL) return;
+  try { fetch(LOG_URL, { method: "POST", mode: "no-cors", keepalive: true, headers: { "Content-Type": "text/plain" }, body: JSON.stringify(d) }).catch(() => {}); } catch (e) {}
+}
 
 /* ---- プロバイダ ---- */
 const BundledStationProvider = {
@@ -433,7 +440,8 @@ async function searchFrom(label, p, run) {
   $("pick").hidden = true;
   $("sum").textContent = ""; $("out").innerHTML = "";
   loadStage(`${cat.label}を探しています`, 30, 95);
-  let places = fromCache(cat.id, p, radiusM()) || null, usedSample = false;
+  const cached = fromCache(cat.id, p, radiusM());
+  let places = cached || null, usedSample = false;
   if (!places) for (const prov of providers.places) {
     try { places = await prov.near(cat, p, radiusM(), run.ctl.signal); usedSample = prov === SamplePlaceProvider;
       if (!usedSample) { cache.unshift({ cat: cat.id, p, r: radiusM(), at: Date.now(), places }); cache.length = Math.min(cache.length, 12); }
@@ -448,6 +456,9 @@ async function searchFrom(label, p, run) {
   places = places.filter(c => { const k = `${c.name}|${c.lat.toFixed(3)}|${c.lng.toFixed(3)}`; if (seen.has(k)) return false; seen.add(k); return true; });
   state.places = places.map(c => ({ ...c, walk: walkMin() ? Math.max(1, Math.round(dist(p, c) * DETOUR / WALK)) : 0, d: dist(p, c) }));
   state.places.sort((a, b) => a.d - b.d);
+  const here = state.mode === "here";
+  logSearch({ cat: cat.label, walk: walkMin(), mode: here ? "現在地" : "駅", area: here ? `${p.lat.toFixed(2)},${p.lng.toFixed(2)}` : "", station: here ? "" : label,
+    n: state.places.length, sec: +(state.took || 0).toFixed(1), result: state.failed ? "失敗" : usedSample ? "内蔵リスト" : "OK", cached: !!cached });
   render();
 }
 
@@ -579,6 +590,7 @@ try {
   const last = localStorage.getItem("mfl:last"); if (last) $("station").value = last;
 } catch (e) {}
 $("walkOut").textContent = walkLabel(); paintSlider();
+$("logNote").hidden = !LOG_URL;
 applyTheme(store.get("theme", ""));
 if (store.get("mode", "here") === "station") { state.mode = "station"; $("modeHere").setAttribute("aria-pressed", false); $("modeStation").setAttribute("aria-pressed", true); $("stForm").hidden = false; }
 // 軽さ優先: 開いた時点では何も読み込まない（駅データは駅から検索したときだけ）
