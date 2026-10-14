@@ -411,6 +411,12 @@ const store = {   // この端末だけに保存。使えない環境でも動�
 let favs = store.get("favs", []).map(f => ({ cat: "cinema", ...f }));   // [{name, cat, lat, lng, url, hours}]
 const isFav = c => favs.some(f => f.name === c.name && f.cat === c.cat && Math.abs(f.lat - c.lat) < 1e-3);
 
+// 地図データの無料サーバーは世界中で共有なので混み具合で速さが変わる。10分以内に近くで同じジャンルを探したら、前の結果を使い回す
+const CACHE_MS = 10 * 60000, cache = [];
+function fromCache(cat, p, r) {
+  const hit = cache.find(e => e.cat === cat && Date.now() - e.at < CACHE_MS && e.r >= r + dist(p, e.p));
+  return hit && hit.places.filter(c => dist(p, c) <= r);
+}
 async function searchFrom(label, p, run) {
   if (run !== state.run) return;   // 待っている間に別のボタンが押された
   const cat = catOf(state.cat);
@@ -418,9 +424,11 @@ async function searchFrom(label, p, run) {
   $("pick").hidden = true;
   $("sum").textContent = ""; $("out").innerHTML = "";
   loadStage(`${cat.label}を探しています`, 30, 95);
-  let places = null, usedSample = false;
-  for (const prov of providers.places) {
-    try { places = await prov.near(cat, p, radiusM(), run.ctl.signal); usedSample = prov === SamplePlaceProvider; break; } catch (e) { if (run.ctl.signal.aborted) return; }
+  let places = fromCache(cat.id, p, radiusM()) || null, usedSample = false;
+  if (!places) for (const prov of providers.places) {
+    try { places = await prov.near(cat, p, radiusM(), run.ctl.signal); usedSample = prov === SamplePlaceProvider;
+      if (!usedSample) { cache.unshift({ cat: cat.id, p, r: radiusM(), at: Date.now(), places }); cache.length = Math.min(cache.length, 12); }
+      break; } catch (e) { if (run.ctl.signal.aborted) return; }
   }
   if (run !== state.run) return;
   state.origin = { label, ...p }; state.usedSample = usedSample;
